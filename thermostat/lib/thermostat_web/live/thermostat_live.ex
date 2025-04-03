@@ -5,10 +5,11 @@ defmodule ThermostatWeb.ThermostatLive do
     ~H"""
     <div>
       <h1>Thermostat</h1>
-      <p>Current Temperature: {Float.round(@state.v, 1)}°C</p>
-      <p>Desired Temperature: {@state.vf}°C</p>
+      <h2>Current Temperature: {Float.round(@state.v, 1)}°C</h2>
+      <h2>Desired Temperature: {@state.vf}°C</h2>
       <div class="text-4xl">
         <button phx-click="increase" class="px-4 py-2 bg-red-500 text-white rounded">+</button>
+        Target: {@state.vf}°C. Now: {Float.round(@state.v, 1)}°C.
         <button phx-click="decrease" class="px-4 py-2 bg-blue-500 text-white rounded">-</button>
       </div>
     </div>
@@ -16,7 +17,7 @@ defmodule ThermostatWeb.ThermostatLive do
   end
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: :timer.send_interval(100, self(), :tick)
+    if connected?(socket), do: :timer.send_interval(500, self(), :tick)
 
     state = Thermostat.ReachAsymptote.new(30.0, 22.0, 0.3)
     {:ok, assign(socket, state: state)}
