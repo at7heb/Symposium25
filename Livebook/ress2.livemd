@@ -1,0 +1,236 @@
+# RESS2
+
+## Processes!
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule MP do
+  # calculate the integral, one slice at a time
+  def all1(count, first, last) do
+    # create each process and send it the message
+    Enum.each(1..count, fn index -> 
+      pid = start(); send(pid, {:one_slice, first, last, index, count, self()}) end)
+    # receive all the partial areas
+    Enum.map(1..count, fn _index -> (receive do {:result, value} -> value end) end)
+    |> Enum.sum()
+  end
+
+  # calcuate the integral, all slices in parallel
+  def all2(count, first, last) do
+    # create all the processes
+    processes = Enum.map(1..count, fn index -> {index, start()} end)
+    # send each process its message
+    Enum.each(processes, fn
+      {index, process} -> send(process, {:one_slice, first, last, index, count, self()})
+    end)
+    # receive all the partial areas
+    Enum.map(1..count, fn _index -> (receive do {:result, value} -> value end) end)
+    |> Enum.sum()
+  end
+
+  # create one process; it will invoke sine_slice
+  def start do
+    spawn(MP, :sine_slice, [])
+  end
+
+  # calculate the area of one slice
+  def sine_slice() do
+    receive do
+      {:one_slice, low, high, index, count, caller} ->
+        return_value = (high - low)/count * :math.sin(low + (high-low)*index/count)
+        send(caller, {:result, return_value})
+    end
+  end
+end
+```
+
+```elixir
+n = 100_000
+first = 0.0
+last = :math.pi
+
+{MP.all1(n, first, last), MP.all2(n, first, last)}
+```
+
+```elixir
+count = 1_000_000
+
+{time, integral} = :timer.tc(fn -> MP.all1(count, first, last) end)
+"Integral = #{integral}. Took #{time/count} us per slice"
+```
+
+```elixir
+{time, integral} = :timer.tc(fn -> MP.all2(count, first, last) end)
+"Integral = #{integral}. Took #{time/count} us per slice"
+```
+
+```elixir
+slice = fn low, high, index, count -> 
+  (high - low)/count * :math.sin(low + (high-low)*index/count) end
+all3 = fn count ->
+  Enum.map(0..count, fn index -> slice.(first, last, index, count) end) |> Enum.sum() end
+slice.(first, last, 500_000, 1_000_000)
+```
+
+```elixir
+{time, integral} = :timer.tc(fn -> all3.(count) end)
+"Integral = #{integral}. Took #{time/count} us per slice"
+```
+
+## Tail Recursion
+
+In tail recursion, the recursive call must be the _LAST_ computed expression.
+
+First, factorial calculation without tail recursion. This isn't tail recursion because after the recursive call to factorial, the code must multiply the partial result by the current factor.
+
+```elixir
+defmodule Factorial1 do
+  def factorial(i) when is_integer(i) and i >= 0 and i <= 1 do
+  1
+end
+
+# NOT TAIL RECURSIVE
+# (After the recursive call there's a multiply -- even though the recursive call is
+#  the last thing on the line...)
+def factorial(i) when is_integer(i) and i > 1 do
+  i * factorial(i - 1)
+end
+end
+```
+
+To allow tail recursion, define a helper function
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule FactorialTR do
+def factorial(i) when is_integer(i) and i >= 0 and i <= 1 do
+  1
+end
+
+def factorial(i) when is_integer(i) and i > 1 do
+  factorial_helper(i, i-1)
+end
+
+defp factorial_helper(partial, 1) do
+  partial
+end
+
+defp factorial_helper(partial, i) do
+  factorial_helper(i*partial, i-1)
+end
+end
+```
+
+```elixir
+n = 100
+IO.puts("#{Factorial1.factorial(n)} &&\n#{FactorialTR.factorial(n)}")
+
+```
+
+## Reverse Tuple - Iterative and Recursive
+
+Return a tuple that is the reverse of the argument.
+
+reverse1()'s algorithm is to make a list that is the reverse of the elements in the tuple and then convert that list into a tuple. It is iterative because it uses the `for <enumerable>` comprehension.
+
+reverse2()'s recursive algorithm is to make copies of the tuple, swapping the first and last, then recur to swap the second and the penultimate, then recur again to swap the third and the antepenultimate, etc.
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule TupleReverse do
+  def reverse1(t) when is_tuple(t) do
+    t_length = tuple_size(t)
+    reversed_list = for index <- 1..t_length//1, do: elem(t, t_length - index)
+    List.to_tuple(reversed_list)
+  end
+  
+  def reverse2(t) when is_tuple(t) do
+    reverse2_helper(t, 0, tuple_size(t))
+  end
+
+  defp reverse2_helper(t, _index, size) when size <= 1 do
+    t
+  end
+
+  defp reverse2_helper(t, index, size) when index < div(tuple_size(t), 2) do
+    earlier = elem(t, index)
+    later = elem(t, size - index - 1)
+    temporary = put_elem(t, index, later)
+    temporary2 = put_elem(temporary, size - index - 1, earlier)
+    reverse2_helper(temporary2, index + 1, size)
+  end
+
+  defp reverse2_helper(t, _, _), do: t
+end
+```
+
+```elixir
+t11 = TupleReverse.reverse1({})
+t12 = TupleReverse.reverse1({1})
+t13 = TupleReverse.reverse1({1, :last})
+t14 = TupleReverse.reverse1({1, 2, 3, 4, 5, 6, 7})
+t21 = TupleReverse.reverse2({})
+t22 = TupleReverse.reverse2({1})
+t23 = TupleReverse.reverse2({1, 2, 3, :last})
+t24 = TupleReverse.reverse2({1, 2, 3, 4, 5, 6, 7})
+
+combined_answers = {t11, t12, t13, t14, t21, t22, t23, t24}
+
+```
+
+## list reverse
+
+The reverse of a list is the list if the length of the list is zero or one.
+The reverse of a list is the reverse of the tail of the list concatenated with the head of the list
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule ListReverse do
+  def reverse(l) when is_list(l) and length(l) <= 1, do: l 
+  def reverse([head | tail] = l) when is_list(l) do
+    reverse(tail) ++ [head]
+  end
+end
+```
+
+```elixir
+ListReverse.reverse([1, 2, 3, 4, 5, 6, 7, 8, 9, :ten, fn a -> a ** 2 end])
+```
+
+## exponential asymptote
+
+reach asymptote with exponential decay
+
+```elixir
+defmodule ReachAsymptote do
+  defstruct t0: 0.0, v0: 0.0, vf: 1.0, r: 0.1, v: 0.0
+  def new(start_time, start_value, asymptote, rate) when is_float(start_time) and is_float(start_value) and is_float(asymptote) and is_float(rate) do
+    %__MODULE__{t0: start_time, v0: start_value, vf: asymptote, r: rate, v: start_value}
+  end
+
+  def value_at(%__MODULE__{} = state, t) when is_float(t) do
+    v = state.vf - (state.vf - state.v0) * :math.exp(-state.r * (t-state.t0))
+    %{state | v: v}
+  end
+end
+```
+
+```elixir
+d = ReachAsymptote.new(0.0, 10.0, 15.0, 0.1)
+```
+
+```elixir
+t = 1000.0
+ReachAsymptote.value_at(d, t)
+```
+
+The Scratch Pad
+
+```elixir
+number = 3
+its_odd = (if 1 == rem(number,2), do: true, else: false)
+```
